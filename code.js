@@ -1120,14 +1120,6 @@ function RatSurfaceDerivs(Aders, wders, d) {
     return SKL;
 }
 
-// Assuming the Bin function is defined like this:
-function Bin(n, k) {
-    let coeff = 1;
-    for (let x = n - k + 1; x <= n; x++) coeff *= x;
-    for (let x = 1; x <= k; x++) coeff /= x;
-    return coeff;
-}
-
 // Example usage of ALGORITHM A4.4
 // let Aders = [/* array of derivatives of the weighted points */];
 // let wders = [/* array of derivatives of the weights */];
