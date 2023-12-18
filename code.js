@@ -280,6 +280,48 @@ function BasisFuns(i, p, u, U) {
 
 
 
+// Function to find the span and multiplicity of a knot in a knot vector
+function findSpanMult(n, p, u, UP) {
+    // Input: n (number of control points minus 1), p (degree of curve), u (parameter value),
+    //        UP (knot vector)
+    // Output: span (the span in which u lies), mult (multiplicity of u)
+
+    if (u === UP[n + 1]) {
+        return [n, 1]; // Special case when u is the last knot value
+    }
+
+    // Find the span of u
+    let low = p;
+    let high = n + 1;
+    let mid = Math.floor((low + high) / 2);
+    while (u < UP[mid] || u >= UP[mid + 1]) {
+        if (u < UP[mid]) {
+            high = mid;
+        } else {
+            low = mid;
+        }
+        mid = Math.floor((low + high) / 2);
+    }
+
+    // Find the multiplicity of u
+    let mult = 0;
+    for (let i = mid; i < UP.length && UP[i] === u; i++) {
+        mult++;
+    }
+
+    return [mid, mult];
+}
+
+// Example usage of findSpanMult
+// let n = /* number of control points minus 1 */;
+// let p = /* degree of curve */;
+// let u = /* parameter value */;
+// let UP = [/* knot vector */];
+// let [span, mult] = findSpanMult(n, p, u, UP);
+// console.log('Span:', span, 'Multiplicity:', mult);
+
+
+
 
 
 // ALGORITHM A2.3
@@ -1008,7 +1050,7 @@ function RatCurveDerivs(Aders, wders, d) {
     return CK;
 }
 
-// Assuming the Bin function is defined like this:
+// Helper function: Binomial coefficient
 function Bin(n, k) {
     let coeff = 1;
     for (let x = n - k + 1; x <= n; x++) coeff *= x;
@@ -1205,6 +1247,999 @@ function CurveKnotIns(n, p, UP, Pw, u, k, s, r) {
 
 
 
+
+
+
+// ALGORITHM A5.2
+// Function to compute a point on a rational B-spline curve.
+function curvePntByCornerCut(np, UP, w, u) {
+    // Compute point on rational B-spline curve
+    // Input: np (control points), UP (knot vector), w (weight), u (parameter value)
+    // Output: C (computed point on the curve)
+
+    let n = np.length - 1;
+    let p = UP.length - n - 1;
+    let C, k, s, r, alpha;
+    let Rw = new Array(p);
+
+    // Endpoints are special cases
+    if (u === UP[0]) {
+        C = divideVectorByScalar(np[0], w);
+        return C;
+    }
+    if (u === UP[n + p + 1]) {
+        C = divideVectorByScalar(np[n], w);
+        return C;
+    }
+
+    // General case
+    [k, s] = findSpanMult(n, p, u, UP);
+    r = p - s;
+    for (let i = 0; i <= r; i++) {
+        Rw[i] = np[k - p + i];
+    }
+    for (let j = 1; j <= r; j++) {
+        for (let i = 0; i <= r - j; i++) {
+            alpha = (u - UP[k - p + j + i]) / (UP[i + k + 1] - UP[k - p + j + i]);
+            Rw[i] = {
+                x: alpha * Rw[i + 1].x + (1.0 - alpha) * Rw[i].x,
+                y: alpha * Rw[i + 1].y + (1.0 - alpha) * Rw[i].y,
+                z: alpha * Rw[i + 1].z + (1.0 - alpha) * Rw[i].z,
+                w: alpha * Rw[i + 1].w + (1.0 - alpha) * Rw[i].w
+            };
+        }
+    }
+    C = divideVectorByScalar(Rw[0], w);
+    return C;
+}
+
+// Helper functions
+function divideVectorByScalar(vector, scalar) {
+    return {
+        x: vector.x / scalar,
+        y: vector.y / scalar,
+        z: vector.z / scalar,
+        w: vector.w / scalar
+    };
+}
+
+// Example usage of ALGORITHM A5.2
+// let np = [/* control points as an array of {x, y, z, w} */];
+// let UP = [/* knot vector */];
+// let w = /* weight */;
+// let u = /* parameter value */;
+// let C = curvePntByCornerCut(np, UP, w, u);
+// console.log(C); // Computed point on the curve
+
+
+
+
+
+
+
+
+// ALGORITHM A5.3
+// SurfaceKnotIns: Algorithm for surface knot insertion in NURBS.
+// This function inserts a knot into a NURBS surface in either the U or V direction.
+function SurfaceKnotIns(np, p, UP, mp, q, VP, Pw, dir, uv, k, s, r, nq, UQ, mq, VQ, Qw) {
+    const U_DIRECTION = 0; // Assuming constant for U direction
+    const V_DIRECTION = 1; // Assuming constant for V direction
+    let alpha = []; // Initialize alpha array as needed
+
+    if (dir === U_DIRECTION) {
+        // U-direction algorithm implementation
+        // Save the alphas
+        for (let j = 1; j <= r; j++) {
+            let L = k - p + j;
+            for (let i = 0; i <= p - j - s; i++) {
+                alpha[i][j] = (uv - UP[L + i]) / (UP[i + k + 1] - UP[L + i]);
+            }
+        }
+        // For each row do
+        for (let row = 0; row <= mp; row++) {
+            // Save unaltered control points
+            for (let i = 0; i <= k - p; i++) Qw[i][row] = Pw[i][row];
+            for (let i = k - s; i <= np; i++) Qw[i + r][row] = Pw[i][row];
+            // Load auxiliary control points
+            for (let i = 0; i <= p - s; i++) Rw[i] = Pw[k - p + i][row];
+            // Insert the knot r times
+            for (let j = 1; j <= r; j++) {
+                let L = k - p + j;
+                for (let i = 0; i <= p - j - s; i++) {
+                    Rw[i] = alpha[i][j] * Rw[i + 1] + (1.0 - alpha[i][j]) * Rw[i];
+                }
+                Qw[L][row] = Rw[0];
+                Qw[k + r - j - s][row] = Rw[p - j - s];
+            }
+            // Load the remaining control points
+            for (let i = L + 1; i < k - s; i++) Qw[i][row] = Rw[i - L];
+        }
+    } else if (dir === V_DIRECTION) {
+        // V-direction algorithm implementation
+        // Save the alphas
+        for (let j = 1; j <= r; j++) {
+            let L = k - q + j;
+            for (let i = 0; i <= q - j - s; i++) {
+                alpha[i][j] = (uv - VP[L + i]) / (VP[i + k + 1] - VP[L + i]);
+            }
+        }
+        // For each column do
+        for (let col = 0; col <= np; col++) {
+            // Save unaltered control points
+            for (let i = 0; i <= k - q; i++) Qw[col][i] = Pw[col][i];
+            for (let i = k - s; i <= mp; i++) Qw[col][i + r] = Pw[col][i];
+            // Load auxiliary control points
+            for (let i = 0; i <= q - s; i++) Rw[i] = Pw[col][k - q + i];
+            // Insert the knot r times
+            for (let j = 1; j <= r; j++) {
+                let L = k - q + j;
+                for (let i = 0; i <= q - j - s; i++) {
+                    Rw[i] = alpha[i][j] * Rw[i + 1] + (1.0 - alpha[i][j]) * Rw[i];
+                }
+                Qw[col][L] = Rw[0];
+                Qw[col][k + r - j - s] = Rw[q - j - s];
+            }
+            // Load the remaining control points
+            for (let i = L + 1; i < k - s; i++) Qw[col][i] = Rw[i - L];
+        }
+    }
+
+    // Return the updated control points and knot vectors
+    return { Qw: Qw, UQ: UQ, VQ: VQ, nq: nq, mq: mq };
+
+}
+
+
+// Example usage of ALGORITHM A5.3
+// let np = /* number of control points in U minus one */;
+// let p = /* degree in U direction */;
+// let UP = /* knot vector in U */;
+// let mp = /* number of control points in V minus one */;
+// let q = /* degree in V direction */;
+// let VP = /* knot vector in V */;
+// let Pw = /* control points array */;
+// let dir = /* direction for knot insertion (0 for U, 1 for V) */;
+// let uv = /* knot value to insert */;
+// let k = /* span where knot is to be inserted */;
+// let s = /* multiplicity of knot */;
+// let r = /* number of times knot is to be inserted */;
+// let nq = /* new number of control points in U (or V) minus one */;
+// let UQ = /* new knot vector in U (or V) */;
+// let mq = /* new number of control points in V (or U) minus one */;
+// let VQ = /* new knot vector in V (or U) */;
+// let Qw = /* new control points array after insertion */;
+// SurfaceKnotIns(np, p, UP, mp, q, VP, Pw, dir, uv, k, s, r, nq, UQ, mq, VQ, Qw);
+// console.log('New Knot Vector:', UQ or VQ);
+// console.log('New Control Points:', Qw);
+
+
+
+
+
+
+
+
+// ALGORITHM A5.4
+// RefineKnotVectCurve: Algorithm for knot refinement in NURBS curve.
+// This algorithm refines a curve by inserting a given set of knots.
+function RefineKnotVectCurve(n, p, U, Pw, X, r, Ubar, Qw) {
+    let m = n + p + 1;
+    let a = FindSpan(n, p, X[0], U);  // Assuming FindSpan is implemented
+    let b = FindSpan(n, p, X[r], U);  // Assuming FindSpan is implemented
+    b++;
+
+    for (let j = 0; j <= a - p; j++) Qw[j] = Pw[j];
+    for (let j = b - 1; j <= n; j++) Qw[j + r + 1] = Pw[j];
+    for (let j = 0; j <= a; j++) Ubar[j] = U[j];
+    for (let j = b + p; j <= m; j++) Ubar[j + r + 1] = U[j];
+
+    let i = b + p - 1, k = b + p + r;
+    for (let j = r; j >= 0; j--) {
+        while (X[j] <= U[i] && i > a) {
+            Qw[k - p - 1] = Pw[i - p - 1];
+            Ubar[k] = U[i];
+            k--; i--;
+        }
+        Qw[k - p - 1] = Qw[k - p];
+        for (let l = 1; l <= p; l++) {
+            let ind = k - p + l;
+            let alfa = Ubar[k + l] - X[j];
+            if (Math.abs(alfa) === 0.0) {
+                Qw[ind - 1] = Qw[ind];
+            } else {
+                alfa = alfa / (Ubar[k + l] - U[i - p + l]);
+                Qw[ind - 1] = alfa * Qw[ind - 1] + (1.0 - alfa) * Qw[ind];
+            }
+        }
+        Ubar[k] = X[j];
+        k--;
+    }
+}
+
+
+// Example usage of ALGORITHM A5.4
+// let n = /* number of control points minus one */;
+// let p = /* degree of the curve */;
+// let U = /* original knot vector */;
+// let Pw = /* control points */;
+// let X = /* new knots to insert */;
+// let r = X.length - 1;
+// let Ubar = new Array(U.length + r + 1); // New knot vector
+// let Qw = new Array(Pw.length + r + 1); // New control points
+// RefineKnotVectCurve(n, p, U, Pw, X, r, Ubar, Qw);
+// console.log('New Knot Vector:', Ubar);
+// console.log('New Control Points:', Qw);
+
+
+
+
+
+
+// ALGORITHM A5.5
+// RefineKnotVectCurve: Algorithm for refining the knot vector of a NURBS curve.
+// This function refines a curve by inserting a set of new knots (X) into the original knot vector (U).
+function RefineKnotVectCurve(n, p, U, Pw, X, r) {
+    let m = n + p + 1;
+    let Ubar = new Array(m + r + 1);
+    let Qw = new Array(n + r + 1);
+
+    for (let i = 0; i <= p; i++) {
+        Ubar[i] = U[i];
+        Ubar[m + r + i + 1] = U[m + i];
+    }
+
+    for (let i = 0; i <= n; i++) {
+        Qw[i] = Pw[i];
+    }
+
+    let i = p;
+    let k = p;
+    let j = 0;
+
+    while (j <= r) {
+        while (i <= m && X[j] >= U[i]) {
+            Ubar[k + 1] = U[i];
+            Qw[k] = Pw[i - p];
+            k++;
+            i++;
+        }
+
+        Ubar[k + 1] = X[j];
+        j++;
+
+        for (let l = 1; l <= p; l++) {
+            Qw[k - l] = Qw[k - l + 1];
+        }
+    }
+
+    return { Ubar, Qw };
+}
+
+// Example usage of ALGORITHM A5.5
+// let n = 3; // Example value for number of control points minus one
+// let p = 2; // Example value for degree of the curve
+// let U = [0, 0, 0, 1, 1, 1]; // Example original knot vector
+// let Pw = [/* Control points array */];
+// let X = [0.5, 0.75]; // Example array of new knots to be inserted
+// let r = X.length - 1;
+// let result = RefineKnotVectCurve(n, p, U, Pw, X, r);
+// console.log('New Knot Vector:', result.Ubar);
+// console.log('New Control Points:', result.Qw);
+
+
+
+
+
+// ALGORITHM A5.6
+// DecomposeCurve: Algorithm for decomposing a NURBS curve into Bézier segments.
+// This function decomposes a given NURBS curve into its constituent Bézier segments.
+function DecomposeCurve(n, p, U, Pw) {
+    let m = n + p + 1;
+    let a = p;
+    let b = p + 1;
+    let nb = 0;
+    let Qw = [];
+    Qw[nb] = [];
+
+    for (let i = 0; i <= p; i++) {
+        Qw[nb][i] = Pw[i];
+    }
+
+    while (b < m) {
+        let i = b;
+        while (b < m && U[b + 1] === U[b]) {
+            b++;
+        }
+        let mult = b - i + 1;
+        if (mult < p) {
+            let numer = U[b] - U[a];
+            let alphas = [];
+            for (let j = p; j > mult; j--) {
+                alphas[j - mult - 1] = numer / (U[a + j] - U[a]);
+            }
+            let r = p - mult;
+            for (let j = 1; j <= r; j++) {
+                let save = r - j;
+                let s = mult + j;
+                for (let k = p; k >= s; k--) {
+                    let alpha = alphas[k - s];
+                    Qw[nb][k] = alpha * Qw[nb][k] + (1.0 - alpha) * Qw[nb][k - 1];
+                }
+                if (b < m) {
+                    Qw[nb + 1][save] = Qw[nb][p];
+                }
+            }
+        }
+        nb++;
+        if (b < m) {
+            Qw[nb] = [];
+            for (let i = p - mult; i <= p; i++) {
+                Qw[nb][i] = Pw[b - p + i];
+            }
+            a = b;
+            b++;
+        }
+    }
+
+    return Qw;
+}
+
+// Example usage of ALGORITHM A5.6
+// let n = /* number of control points minus one */;
+// let p = /* degree of the curve */;
+// let U = /* knot vector */;
+// let Pw = /* control points array */;
+// let bezierSegments = DecomposeCurve(n, p, U, Pw);
+// console.log('Bézier Segments:', bezierSegments);
+
+
+
+
+
+
+
+
+
+// ALGORITHM A5.7
+// DecomposeSurface: Algorithm for decomposing a NURBS surface into Bézier patches.
+// This function decomposes a given NURBS surface into its constituent Bézier patches in either the U or V direction.
+function DecomposeSurface(n, p, U, m, q, V, Pw, dir) {
+    const U_DIRECTION = 0; // Assuming constant for U direction
+    const V_DIRECTION = 1; // Assuming constant for V direction
+    let nb = 0;
+    let Qw = [];
+
+    if (dir === U_DIRECTION) {
+        let a = p, b = p + 1;
+        Qw[nb] = [];
+
+        for (let i = 0; i <= p; i++) {
+            Qw[nb][i] = [];
+            for (let row = 0; row <= m; row++) {
+                Qw[nb][i][row] = Pw[i][row];
+            }
+        }
+
+        while (b < m) {
+            let i = b;
+            while (b < m && U[b + 1] === U[b]) {
+                b++;
+            }
+            let mult = b - i + 1;
+            if (mult < p) {
+                for (let j = p; j > mult; j--) {
+                    for (let k = p; k >= j; k--) {
+                        let alpha = (U[b] - U[a + k]) / (U[a + j] - U[a + k]);
+                        for (let col = 0; col <= n; col++) {
+                            Qw[nb][k][col] = alpha * Qw[nb][k][col] + (1.0 - alpha) * Qw[nb][k - 1][col];
+                        }
+                    }
+                }
+            }
+
+            nb++;
+            if (b < m) {
+                Qw[nb] = [];
+                for (let i = p - mult; i <= p; i++) {
+                    Qw[nb][i] = [];
+                    for (let row = 0; row <= m; row++) {
+                        Qw[nb][i][row] = Pw[b - p + i][row];
+                    }
+                }
+                a = b;
+                b++;
+            }
+        }
+    }
+    else if (dir === V_DIRECTION) {
+        let a = q, b = q + 1;
+        Qw[nb] = [];
+
+        for (let col = 0; col <= n; col++) {
+            Qw[nb][col] = [];
+            for (let j = 0; j <= q; j++) {
+                Qw[nb][col][j] = Pw[col][j];
+            }
+        }
+
+        while (b < m) {
+            let i = b;
+            while (b < m && V[b + 1] === V[b]) {
+                b++;
+            }
+            let mult = b - i + 1;
+            if (mult < q) {
+                for (let j = q; j > mult; j--) {
+                    for (let k = q; k >= j; k--) {
+                        let alpha = (V[b] - V[a + k]) / (V[a + j] - V[a + k]);
+                        for (let row = 0; row <= n; row++) {
+                            Qw[nb][row][k] = alpha * Qw[nb][row][k] + (1.0 - alpha) * Qw[nb][row][k - 1];
+                        }
+                    }
+                }
+            }
+
+            nb++;
+            if (b < m) {
+                Qw[nb] = [];
+                for (let col = 0; col <= n; col++) {
+                    Qw[nb][col] = [];
+                    for (let j = q - mult; j <= q; j++) {
+                        Qw[nb][col][j] = Pw[col][b - q + j];
+                    }
+                }
+                a = b;
+                b++;
+            }
+        }
+    }
+
+    return Qw;
+}
+
+// Example usage of ALGORITHM A5.7
+// let n = /* number of control points in U minus one */;
+// let p = /* degree in U direction */;
+// let U = /* knot vector in U */;
+// let m = /* number of control points in V minus one */;
+// let q = /* degree in V direction */;
+// let V = /* knot vector in V */;
+// let Pw = /* control points array */;
+// let dir = /* direction for decomposition (0 for U, 1 for V) */;
+// let bezierPatches = DecomposeSurface(n, p, U, m, q, V, Pw, dir);
+// console.log('Bézier Patches:', bezierPatches);
+
+
+
+
+
+
+// ALGORITHM A5.8
+// RemoveCurveKnot: Algorithm for removing a knot from a NURBS curve.
+// This function attempts to remove a knot 'u' from a NURBS curve 'num' times.
+// Input: n (number of control points minus 1), p (curve degree), U (knot vector),
+//        Pw (control points), u (knot to be removed), r (knot span index),
+//        s (multiplicity of the knot), num (number of times to remove the knot)
+// Output: The function updates the control points and the knot vector in place.
+function RemoveCurveKnot(n, p, U, Pw, u, r, s, num) {
+    let m = n + p + 1;
+    let ord = p + 1;
+    let fout = (2 * r - s - p) / 2;
+    let last = r - s;
+    let first = r - p;
+    let temp = [];
+    let t;
+
+    for (t = 0; t < num; t++) {
+        let off = first - 1;
+        temp[0] = Pw[off];
+        temp[last + 1 - off] = Pw[last + 1];
+
+        let i = first, j = last;
+        let ii = 1, jj = last - off;
+        let remflag = 0;
+
+        while (j - i > t) {
+            let alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+            let alfj = (u - U[j - t]) / (U[j + ord] - U[j - t]);
+            temp[ii] = (Pw[i] - (1.0 - alfi) * temp[ii - 1]) / alfi;
+            temp[jj] = (Pw[j] - alfj * temp[jj + 1]) / (1.0 - alfj);
+            i++; ii++;
+            j--; jj--;
+        }
+
+        if (j - i < t) {
+            if (Distance4D(temp[ii - 1], temp[jj + 1]) <= TOL) {
+                remflag = 1;
+            }
+        } else {
+            let alfi = (u - U[i]) / (U[i + ord + t] - U[i]);
+            if (Distance4D(Pw[i], alfi * temp[ii + t + 1] + (1.0 - alfi) * temp[ii - 1]) <= TOL) {
+                remflag = 1;
+            }
+        }
+
+        if (remflag === 0) {
+            break;
+        } else {
+            i = first; j = last;
+            while (j - i > t) {
+                Pw[i] = temp[i - off];
+                Pw[j] = temp[j - off];
+                i++; j--;
+            }
+        }
+
+        first--; last++;
+    }
+
+    if (t === 0) {
+        return;
+    }
+
+    for (let k = r + 1; k <= m; k++) {
+        U[k - t] = U[k];
+    }
+
+    let j = fout, i = j;
+    for (let k = 1; k < t; k++) {
+        if (k % 2 === 1) {
+            i++;
+        } else {
+            j--;
+        }
+    }
+
+    for (let k = i + 1; k <= n; k++) {
+        Pw[j] = Pw[k];
+        j++;
+    }
+}
+
+// Example usage of ALGORITHM A5.8
+// let n, p, U, Pw, u, r, s, num;
+// Initialize these variables as per your curve specifications
+// RemoveCurveKnot(n, p, U, Pw, u, r, s, num);
+// The control points Pw and knot vector U are modified in place
+
+// Helper function: Distance4D (Point1, Point2)
+// This function should calculate the 4D Euclidean distance between two points.
+function Distance4D(Point1, Point2) {
+    let dx = Point1[0] - Point2[0];
+    let dy = Point1[1] - Point2[1];
+    let dz = Point1[2] - Point2[2];
+    let dw = Point1[3] - Point2[3];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz + dw * dw);
+}
+
+
+const TOL = 0.001; // Tolerance for knot removal
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ALGORITHM A5.9
+// DegreeElevateCurve: Algorithm for degree elevation of a NURBS curve.
+// This function increases the degree of a given NURBS curve by a factor of 't'.
+// Input: n (number of control points minus one), p (degree of the curve), 
+//        U (knot vector), Pw (control points), t (degree elevation factor)
+// Output: Returns an object containing the new degree (nh), the new knot vector (Uh),
+//         and the new control points (Qw) of the elevated curve.
+function DegreeElevateCurve(n, p, U, Pw, t) {
+    let m = n + p + 1;
+    let ph = p + t;
+    let bezalfs = new Array(ph + 1).fill(0).map(() => new Array(p + 1).fill(0));
+    let bpts = new Array(p + 1);
+    let ebpts = new Array(ph + 1);
+    let nextbpts = new Array(p - 1);
+    let alfs = new Array(p - 1);
+    let mh = ph;
+    let r = -1;
+    let a = p;
+    let b = p + 1;
+    let cind = 1;
+    let ua = U[0];
+    let Qw = new Array(m + t);
+    let Uh = new Array(m + t);
+
+    // Initialize bezalfs
+    bezalfs[0][0] = bezalfs[ph][p] = 1.0;
+    for (let i = 1; i <= ph; i++) {
+        let mpi = Math.min(p, i);
+        for (let j = Math.max(0, i - t); j <= mpi; j++) {
+            bezalfs[i][j] = Bin(ph, i) * Bin(p, j) * Bin(t, i - j) / Bin(ph, j);
+        }
+    }
+
+    // Initialize first bezier seg
+    for (let i = 0; i <= p; i++) {
+        bpts[i] = Pw[i];
+    }
+
+    // Big loop through knot vector
+    while (b < m) {
+        i = b;
+        while (b < m && U[b] === U[b + 1]) {
+            b++;
+        }
+        let mul = b - i + 1;
+        mh += mul + t;
+        let ub = U[b];
+        let oldr = r;
+        r = p - mul;
+
+        // Insert knot u(b) r times
+        if (oldr > 0) {
+            lbz = Math.floor((oldr + 2) / 2);
+        } else {
+            lbz = 1;
+        }
+
+        if (r > 0) {
+            rbz = ph - Math.floor((r + 1) / 2);
+        } else {
+            rbz = ph;
+        }
+
+        if (r > 0) {
+            // Insert knot to get Bézier segment
+            let numer = ub - ua;
+            for (let k = p; k > mul; k--) {
+                alfs[k - mul - 1] = numer / (U[a + k] - ua);
+            }
+
+            for (let j = 1; j <= r; j++) {
+                let save = r - j;
+                let s = mul + j;
+                for (let k = p; k >= s; k--) {
+                    bpts[k] = alfs[k - s] * bpts[k] + (1.0 - alfs[k - s]) * bpts[k - 1];
+                }
+                nextbpts[save] = bpts[p];
+            }
+        }
+
+        if (r > 0) {
+            let numer = ub - ua;
+            for (let k = p; k > mul; k--) {
+                alfs[k - mul - 1] = numer / (U[a + k] - ua);
+            }
+
+            for (let j = 1; j <= r; j++) {
+                let save = r - j;
+                let s = mul + j;
+
+                for (let k = p; k >= s; k--) {
+                    bpts[k] = alfs[k - s] * bpts[k] + (1.0 - alfs[k - s]) * bpts[k - 1];
+                }
+                nextbpts[save] = bpts[p];
+            }
+        }
+
+
+
+
+        // Degree elevate Bezier
+        for (let i = lbz; i <= ph; i++) {
+            ebpts[i] = 0.0;
+            let mpi = Math.min(p, i);
+            for (let j = Math.max(0, i - t); j <= mpi; j++) {
+                ebpts[i] += bezalfs[i][j] * bpts[j];
+            }
+        }
+
+        // Prepare for next pass through loop
+        if (oldr > 1) {
+            let lbz = Math.max(2, lbz);
+            for (let i = lbz; i <= ph; i++) {
+                let ii = i - lbz;
+                Qw[cind + ii] = ebpts[i];
+                Uh[cind + ii] = ub;
+            }
+            for (let i = 0; i < ph - oldr; i++) {
+                bpts[i] = nextbpts[i];
+            }
+            for (let i = ph - oldr; i < ph; i++) {
+                bpts[i] = Pw[b - ph + i];
+            }
+            a = b;
+            b++;
+            ua = ub;
+        }
+
+
+        if (a !== p) {
+            for (let i = 0; i < ph - oldr; i++) {
+                Uh[kind++] = ua;
+            }
+            for (let i = lbz; i <= ph; i++) {
+                ebpts[i] = Pw[a - ph + i];
+            }
+            b = b + 1;
+            if (b < m) {
+                ua = U[b];
+            }
+            else {
+                ua = U[b + 1];
+            }
+            a = b;
+            for (let i = 0; i <= ph; i++) {
+                bpts[i] = ebpts[i];
+            }
+        }
+
+        for (let j = lbz; j <= rbz; j++) {
+            Qw[cind++] = ebpts[j];
+        }
+
+        if (b < m) {
+            // Set up for next pass through loop
+            for (let i = 0; i <= ph - oldr - 1; i++) {
+                bpts[i] = nextbpts[i];
+            }
+            for (let i = ph - oldr; i <= ph; i++) {
+                bpts[i] = Pw[b - ph + i];
+            }
+            a = b;
+            b++;
+            if (b < m) ua = U[b];
+        } else {
+            // End knot
+            for (let i = 0; i <= ph; i++) {
+                Uh[kind + i] = ub;
+            }
+        }
+
+
+        first = first - 1;
+        last = last + 1;
+    }
+
+    // Finish the last bezier seg
+    for (let i = 0; i <= ph; i++) {
+        Uh[kind + i] = U[b];
+    }
+
+    return { nh: mh - ph - 1, Uh, Qw };
+}
+
+
+
+
+// Example usage of DegreeElevateCurve
+// let n = /* number of control points minus one */;
+// let p = /* degree of the curve */;
+// let U = /* original knot vector */;
+// let Pw = /* control points */;
+// let t = /* number of times to elevate degree */;
+// let { nh, Uh, Qw } = DegreeElevateCurve(n, p, U, Pw, t);
+// console.log('New degree:', nh);
+// console.log('New knot vector:', Uh);
+// console.log('New control points:', Qw);
+
+
+
+
+
+
+
+// ALGORITHM A5.10
+// DegreeElevateSurface: Algorithm for degree elevation of a NURBS surface.
+// This function increases the degree of a given NURBS surface in either the U or V direction.
+// Input: n, p, U, m, q, V, Pw, dir, t
+// Output: nh, Uh, mh, Vh, Qw
+
+function DegreeElevateSurface(n, p, U, m, q, V, Pw, dir, t) {
+    // Assuming constants for directions
+    const U_DIRECTION = 0;
+    const V_DIRECTION = 1;
+
+    let nh, Uh, mh, Vh, Qw; // Output variables
+
+    if (dir === U_DIRECTION) {
+        let Bezier = new Array(p + 1).fill(null).map(() => new Array(q + 1));
+        let NextBezier = new Array(p + 1).fill(null).map(() => new Array(q + 1));
+        let alphas = new Array(p + 1);
+        let mh = p;
+        let a = p;
+        let b = p + 1;
+        let Qw = new Array((n + t + 1) * (m + 1)).fill(null).map(() => new Array(4)); // Assuming 4D points
+        let Uh = new Array(n + t + 1);
+
+        // Initialize knot vectors and first row of control points
+        for (let j = 0; j <= p; j++) {
+            Uh[j] = U[j];
+        }
+        for (let i = 0; i <= n; i++) {
+            Qw[i][0] = Pw[i][0];
+        }
+
+        let kind = p + 1;
+        let ua = U[0];
+        let ub = 0;
+        let r = 0;
+
+        // Main loop through knot vector
+        while (b < m) {
+            // get multiplicity, ub, r, oldr, etc.
+            ub = U[b];
+            while (b < m && U[b] === ub) {
+                b++;
+            }
+            let oldr = r;
+            r = p - (b - a);
+
+            // Save alfas
+            for (let i = 0; i <= p - oldr - 1; i++) {
+                alphas[i] = ub - ua;
+            }
+            for (let j = 0; j <= p; j++) {
+                Bezier[j] = Pw[a - p + j];
+            }
+
+            // Insert knot
+            if (oldr > 0) {
+                let first = kind - 2;
+                let last = kind;
+                let den = ub - ua;
+                let bet = (ub - Uh[kind - 1]) / den;
+
+                for (; last - first > 0; last--, first++) {
+                    for (let i = 0; i <= p; i++) {
+                        Bezier[i] = alphas[i] * (Bezier[i] - NextBezier[first][i]) / bet + NextBezier[first][i];
+                    }
+                    Qw[kind][0] = Bezier[p];
+                    kind++;
+                }
+            }
+
+            if (a !== p) {
+                for (let i = 0; i < p - r; i++) {
+                    Qw[kind][0] = Bezier[i];
+                    kind++;
+                }
+            }
+
+            if (b < m) {
+                for (let i = 0; i <= r; i++) {
+                    Bezier[i] = Pw[b - r + i];
+                }
+                a = b;
+                b++;
+                ua = ub;
+            } else {
+                for (let i = 0; i <= p; i++) {
+                    Qw[kind + i][0] = Bezier[i];
+                }
+            }
+        }
+
+        // Update remaining control points and knots
+        for (let i = kind; i <= mh; i++) {
+            Uh[i] = ub;
+        }
+        for (let i = mh + 1; i <= ph; i++) {
+            Uh[i] = U[m];
+        }
+        for (let j = 0; j <= q; j++) {
+            for (let i = mh - p; i <= n + t; i++) {
+                Qw[i][j] = Pw[a - p + i][j];
+            }
+        }
+
+    } else if (dir === V_DIRECTION) {
+        let Bezier = new Array(q + 1).fill(null).map(() => new Array(n + 1));
+        let NextBezier = new Array(q + 1).fill(null).map(() => new Array(n + 1));
+        let alphas = new Array(q + 1);
+        let mh = q;
+        let a = q;
+        let b = q + 1;
+        let Qw = new Array((m + t + 1) * (n + 1)).fill(null).map(() => new Array(4)); // Assuming 4D points
+        let Vh = new Array(m + t + 1);
+
+        for (let j = 0; j <= q; j++) {
+            Vh[j] = V[j];
+        }
+        for (let i = 0; i <= m; i++) {
+            for (let j = 0; j <= n; j++) {
+                Qw[j][i] = Pw[j][i];
+            }
+        }
+
+        let kind = q + 1;
+        let va = V[0];
+        let vb = 0;
+        let r = 0;
+
+        while (b < m) {
+            vb = V[b];
+            while (b < m && V[b] === vb) {
+                b++;
+            }
+            let oldr = r;
+            r = q - (b - a);
+
+            for (let i = 0; i <= q - oldr - 1; i++) {
+                alphas[i] = vb - va;
+            }
+            for (let j = 0; j <= q; j++) {
+                Bezier[j] = Pw[a - q + j];
+            }
+
+            if (oldr > 0) {
+                let first = kind - 2;
+                let last = kind;
+                let den = vb - va;
+                let bet = (vb - Vh[kind - 1]) / den;
+
+                for (; last - first > 0; last--, first++) {
+                    for (let i = 0; i <= q; i++) {
+                        Bezier[i] = alphas[i] * (Bezier[i] - NextBezier[first][i]) / bet + NextBezier[first][i];
+                    }
+                    for (let j = 0; j <= n; j++) {
+                        Qw[j][kind] = Bezier[q];
+                    }
+                    kind++;
+                }
+            }
+
+            if (a !== q) {
+                for (let i = 0; i < q - r; i++) {
+                    for (let j = 0; j <= n; j++) {
+                        Qw[j][kind] = Bezier[i];
+                    }
+                    kind++;
+                }
+            }
+
+            if (b < m) {
+                for (let i = 0; i <= r; i++) {
+                    Bezier[i] = Pw[b - r + i];
+                }
+                a = b;
+                b++;
+                va = vb;
+            } else {
+                for (let i = 0; i <= q; i++) {
+                    for (let j = 0; j <= n; j++) {
+                        Qw[j][kind + i] = Bezier[i];
+                    }
+                }
+            }
+        }
+
+        for (let i = kind; i <= mh; i++) {
+            Vh[i] = vb;
+        }
+        for (let i = mh + 1; i <= ph; i++) {
+            Vh[i] = V[m];
+        }
+        for (let i = 0; i <= n; i++) {
+            for (let j = mh - q; j <= m + t; j++) {
+                Pw[i][j] = Qw[i][j];
+            }
+        }
+    }
+
+
+    return { nh, Uh, mh, Vh, Qw };
+}
+
+// Example usage of ALGORITHM A5.10
+// let n, p, U, m, q, V, Pw, dir, t;
+// Initialize these variables as per your surface specifications
+// let result = DegreeElevateSurface(n, p, U, m, q, V, Pw, dir, t);
+// Use result.nh, result.Uh, result.mh, result.Vh, result.Qw as needed
 
 
 
