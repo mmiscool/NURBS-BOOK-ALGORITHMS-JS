@@ -1,3 +1,5 @@
+//----------------Chapter 1 : Curve and Surface Basics 
+
 // ALGORITHM A1.1
 // Horner's algorithm for computing a point on a power basis curve.
 function Horner1(a, n, u0) {
@@ -197,7 +199,7 @@ function deCasteljau2(P, n, m, u0, v0) {
 
 
 
-//----------------Chapter 2 
+//--------------------Chapter 2 : B-Spline Basis Functions 
 
 
 // ALGORITHM A2.1
@@ -583,7 +585,7 @@ function DersOneBasisFun(p, m, U, i, u, n) {
 
 
 
-//--------------------Chapter 3
+//--------------------Chapter 3 : B-spline Curves and Surfaces 
 
 // ALGORITHM A3.1
 // Function to compute a curve point.
@@ -983,8 +985,7 @@ function SurfaceDerivsAlg2(n, p, U, m, q, V, P, u, v, d) {
 
 
 
-
-//------------------Chapter 4
+//--------------------Chapter 4 : Rational B-spline Curves and Surfaces 
 
 
 
@@ -1175,7 +1176,7 @@ function RatSurfaceDerivs(Aders, wders, d) {
 
 
 
-//---------------------Chapter 5
+//--------------------Chapter 5 : Fundamental Geometric Algorithms 
 
 
 
@@ -2243,3 +2244,243 @@ function DegreeElevateSurface(n, p, U, m, q, V, Pw, dir, t) {
 
 
 
+
+
+
+// ALGORITHM A5.11
+// DegreeReduceCurve: Algorithm for degree reduction of a NURBS curve.
+// This function attempts to reduce the degree of a NURBS curve from 'p' to 'p-1'.
+// Input: n (number of control points minus one), p (degree of the curve),
+//        U (original knot vector), Qw (original control points).
+// Output: Returns an object containing the new degree (nh), the new knot vector (Uh),
+//         and the new control points (Pw) of the degree-reduced curve.
+function DegreeReduceCurve(n, p, U, Qw) {
+    let ph = p - 1;
+    let mh = ph;
+    let kind = ph + 1;
+    let r = -1;
+    let a = p;
+    let b = p + 1;
+    let cind = 1;
+    let mult = p;
+    let m = n + p + 1;
+    let Pw = new Array(n).fill(0).map(() => new Array(4)); // Assuming 4D points
+    let Uh = new Array(m - 1);
+    let MaxErr = 0;
+
+
+    Pw[0] = Qw[0];
+    for (let i = 0; i <= ph; i++) {
+        Uh[i] = U[0]; // Compute left end of knot vector
+    }
+
+    let bpts = new Array(p + 1); // Initialize bpts array
+    let rbpts = new Array(p + 1); // Initialize rbpts array
+    let alphas = new Array(p - 1); // Initialize alphas array
+    let Nextbpts = new Array(p - 1); // Initialize Nextbpts array
+    let e = new Array(m).fill(0.0); // Initialize error vector
+
+    // Main loop through knot vector
+    while (b < m) {
+        let i = b;
+        while (b < m && U[b] === U[b + 1]) {
+            b++;
+        }
+        mult = b - i + 1;
+        mh = mh + mult - 1;
+        let oldr = r;
+        r = p - mult;
+
+        // Degree reduction steps
+        for (let i = 0; i <= p; i++) {
+            bpts[i] = Qw[a - p + i];
+        }
+        for (let i = 0; i <= p - 1; i++) {
+            rbpts[i] = bpts[i + 1];
+        }
+
+        for (let iter = 1; iter <= r; iter++) {
+            let first = kind - 2;
+            let last = kind;
+            let den = U[b] - U[a];
+            for (let i = first; i < last; i++) {
+                alphas[i - first] = (U[b] - Uh[i]) / den;
+                for (let dim = 0; dim < 4; dim++) {
+                    rbpts[i] = alphas[i - first] * rbpts[i] + (1.0 - alphas[i - first]) * rbpts[i + 1];
+                }
+            }
+            kind++;
+        }
+
+        // Compute the error of degree reduction at each step
+        for (let i = a; i <= b; i++) {
+            e[i] = 0.0;
+            for (let dim = 0; dim < 4; dim++) {
+                e[i] += Math.pow(Qw[i][dim] - rbpts[kind - a + ph - i][dim], 2);
+            }
+            e[i] = Math.sqrt(e[i]);
+            MaxErr = Math.max(MaxErr, e[i]);
+        }
+
+
+        // Check if curve is degree reducible
+        if (e[a] > TOL) {
+            console.log("Curve not degree reducible");
+            return;
+        }
+
+        // Knot removal and error bounds computation
+        if (oldr > 0) {
+            let first = kind - 2;
+            let last = kind;
+            for (let i = first; i < last; i++) {
+                for (let j = 0; j < 4; j++) {  // Assuming 4D points
+                    Pw[cind][j] = rbpts[i - first][j];
+                }
+                Uh[cind] = U[a];
+                cind++;
+            }
+        } else if (a !== p) {
+            for (let i = 0; i < 4; i++) {  // Assuming 4D points
+                Pw[cind][i] = Qw[a][i];
+            }
+            Uh[cind] = U[a];
+            cind++;
+        }
+
+        // Set up for next iteration
+        a++;
+        if (a < m) {
+            for (let i = 0; i < p - mult; i++) {
+                bpts[i] = Qw[a - p + mult + i];
+            }
+            for (let i = 0; i < mult; i++) {
+                rbpts[i] = Qw[a + i];
+            }
+        }
+
+        // Update variables a, b, etc. for the next pass through the loop
+    }
+
+    nh = mh - ph - 1;
+    return { nh, Uh, Pw }; // Return the new degree, knot vector, and control points
+}
+
+// Example usage of DegreeReduceCurve
+// let n = /* number of control points minus one */;
+// let p = /* degree of the curve */;
+// let U = /* original knot vector */;
+// let Qw = /* control points */;
+// let { nh, Uh, Pw } = DegreeReduceCurve(n, p, U, Qw);
+
+
+
+
+
+
+
+//---------------------Chapter 6: Advanced Geometric Algorithms 
+
+// ALGORITHM A6.1
+// BezierToPowerMatrix: Algorithm for computing the matrix to convert Bézier form to power form.
+// This function calculates the matrix used to convert a curve from its Bézier form to the power form.
+// Input: p (degree of the Bézier curve)
+// Output: Returns a matrix that can be used to convert the Bézier form of a curve of degree 'p' to its power form.
+function BezierToPowerMatrix(p) {
+    let M = new Array(p + 1).fill(0).map(() => new Array(p + 1).fill(0));
+    for (let i = 0; i <= p; i++) {
+        for (let j = i + 1; j <= p; j++) {
+            M[i][j] = 0.0;
+        }
+    }
+
+    M[0][0] = M[p][p] = 1.0;
+    M[p][0] = (p % 2 === 0) ? 1.0 : -1.0;
+    let sign = -1.0;
+
+    for (let i = 1; i < p; i++) {
+        M[i][i] = Bin(p, i);
+        M[i][0] = M[p][p - i] = sign * M[i][i];
+        sign = -sign;
+    }
+
+    let k1 = Math.floor((p + 1) / 2);
+    let pk = p - 1;
+    for (let k = 1; k < k1; k++) {
+        sign = -1.0;
+        for (let j = k + 1; j <= pk; j++) {
+            M[j][k] = M[pk][p - j] = sign * Bin(p, k) * Bin(p - k, j - k);
+            sign = -sign;
+        }
+        pk--;
+    }
+
+    return M;
+}
+// Example usage of BezierToPowerMatrix
+// let p = /* degree of the Bézier curve */;
+// let matrix = BezierToPowerMatrix(p);
+// Use 'matrix' for converting Bézier form to power form
+
+
+
+
+
+// ALGORITHM A6.2
+// PowerToBezierMatrix: Algorithm for computing the matrix to convert power form to Bézier form.
+// This function calculates the matrix used to convert a curve from its power form to the Bézier form.
+// Input: p (degree of the curve), M (matrix to be inverted)
+// Output: Returns the inverse matrix that can be used to convert the power form of a curve of degree 'p' to its Bézier form.
+function PowerToBezierMatrix(p, M) {
+    let MI = new Array(p + 1).fill(0).map(() => new Array(p + 1).fill(0));
+
+    for (let i = 0; i < p; i++) {
+        for (let j = i + 1; j <= p; j++) {
+            MI[i][j] = 0.0;
+        }
+    }
+
+    for (let i = 0; i <= p; i++) {
+        MI[i][0] = MI[p][i] = 1.0;
+        MI[i][i] = 1.0 / M[i][i];
+    }
+
+    let k1 = Math.floor((p + 1) / 2), pk = p - 1;
+    for (let k = 1; k < k1; k++) {
+        for (let j = k + 1; j <= pk; j++) {
+            let d = 0.0;
+            for (let i = k; i < j; i++) {
+                d -= M[j][i] * MI[i][k];
+            }
+            MI[j][k] = d / M[j][j];
+            MI[pk][p - j] = MI[j][k];
+        }
+        pk--;
+    }
+
+    return MI;
+}
+// Example usage of PowerToBezierMatrix
+// let p = /* degree of the curve */;
+// let M = /* matrix from Bézier to power form (from A6.1) */;
+// let MI = PowerToBezierMatrix(p, M);
+// Use 'MI' for converting power form to Bézier form
+
+
+
+//---------------------Chapter 7: Conics and Circles
+
+
+
+
+
+
+
+//---------------------Chapter 8: Construction of Common Surfaces 
+
+
+
+//---------------------Chapter 9: Curve and Surface Fitting 
+
+
+//---------------------Chapter 10: Advanced Surface Construction Techniques
