@@ -2470,7 +2470,243 @@ function PowerToBezierMatrix(p, M) {
 
 //---------------------Chapter 7: Conics and Circles
 
+// ALGORITHM A7.1
+// MakeNurbsCircle: Creates an arbitrary NURBS circular arc.
+// Input: O (center point), X and Y (vectors defining the plane of the circle), 
+//        r (radius), ths (start angle), the (end angle)
+// Output: n (number of control points minus one), U (knot vector), Pw (control points)
 
+function MakeNurbsCircle(O, X, Y, r, ths, the) {
+    if (the < ths) the = 360.0 + the;
+    let theta = the - ths;
+    let narcs = (theta <= 90.0) ? 1 : (theta <= 180.0) ? 2 : (theta <= 270.0) ? 3 : 4;
+    let dtheta = theta / narcs;
+    let n = 2 * narcs;
+    let w1 = Math.cos(dtheta / 2.0);
+
+    let Pw = new Array(n + 1); // Control points array
+    let U = new Array(2 * narcs + 4); // Knot vector
+
+    let P0 = AddVectors(O, AddVectors(ScaleVector(r * Math.cos(ths), X), ScaleVector(r * Math.sin(ths), Y)));
+    let T0 = SubtractVectors(ScaleVector(-Math.sin(ths), X), ScaleVector(Math.cos(ths), Y));
+    Pw[0] = P0;
+    let index = 0;
+    let angle = ths;
+
+    for (let i = 1; i <= narcs; i++) {
+        angle += dtheta;
+        let P2 = AddVectors(O, AddVectors(ScaleVector(r * Math.cos(angle), X), ScaleVector(r * Math.sin(angle), Y)));
+        Pw[index + 2] = P2;
+        let T2 = SubtractVectors(ScaleVector(-Math.sin(angle), X), ScaleVector(Math.cos(angle), Y));
+        let P1 = Intersect3DLines(P0, T0, P2, T2);
+        Pw[index + 1] = ScaleVector(w1, P1);
+
+        index += 2;
+        if (i < narcs) {
+            P0 = P2;
+            T0 = T2;
+        }
+    }
+
+    let j = 2 * narcs + 1;
+    for (let i = 0; i < 3; i++) {
+        U[i] = 0.0;
+        U[i + j] = 1.0;
+    }
+
+    // Set the internal knots of U
+    switch (narcs) {
+        case 1: break;
+        case 2: U.fill(0.5, 3, 5); break;
+        case 3: U.fill(1.0 / 3.0, 3, 5); U.fill(2.0 / 3.0, 5, 7); break;
+        case 4: U.fill(0.25, 3, 5); U.fill(0.5, 5, 7); U.fill(0.75, 7, 9); break;
+    }
+
+    return { n, U, Pw };
+}
+
+// Example usage of MakeNurbsCircle
+// let O, X, Y, r, ths, the;
+// Initialize these variables as per your specifications
+// let { n, U, Pw } = MakeNurbsCircle(O, X, Y, r, ths, the);
+
+// Helper functions for vector operations
+function AddVectors(v1, v2) {
+    if (v1.length !== v2.length) {
+        throw new Error("Vector sizes must match for addition");
+    }
+
+    let result = new Array(v1.length);
+    for (let i = 0; i < v1.length; i++) {
+        result[i] = v1[i] + v2[i];
+    }
+    return result;
+}
+
+
+function ScaleVector(scalar, vector) {
+    let result = new Array(vector.length);
+    for (let i = 0; i < vector.length; i++) {
+        result[i] = scalar * vector[i];
+    }
+    return result;
+}
+
+
+function ScaleVector(scalar, vector) {
+    let result = new Array(vector.length);
+    for (let i = 0; i < vector.length; i++) {
+        result[i] = scalar * vector[i];
+    }
+    return result;
+}
+
+function Intersect3DLines(P0, T0, P2, T2) {
+    // This function assumes that the lines do intersect and that T0 and T2 are not parallel
+    // For more complex scenarios, additional checks and handling are required
+
+    let A = [
+        [T0[0], -T2[0], P2[0] - P0[0]],
+        [T0[1], -T2[1], P2[1] - P0[1]],
+        [T0[2], -T2[2], P2[2] - P0[2]]
+    ];
+
+    // Solving the system A * [s; t; 1] = 0
+    // Find s such that the determinant of A with its last column replaced by [s; t; 1] is zero
+    let s = (A[1][1] * A[2][2] - A[2][1] * A[1][2]) / (A[0][0] * A[1][1] - A[1][0] * A[0][1]);
+
+    return AddVectors(P0, ScaleVector(s, T0));
+}
+
+
+
+
+
+// ALGORITHM A7.2
+// MakeOneArc: Creates one Bézier conic arc.
+// Input: P0 (start point), T0 (start tangent), P2 (end point), T2 (end tangent), P (point on the arc)
+// Output: P1 (control point of the Bézier arc), w1 (weight for the control point)
+function MakeOneArc(P0, T0, P2, T2, P) {
+    let V02 = SubtractVectors(P2, P0);
+    let result = Intersect3DLines(P0, T0, P2, T2);
+    let P1, w1;
+
+    if (!result.infinite) {
+        P1 = result.intersection;
+        let V1P = SubtractVectors(P, P1);
+        let alf = Intersect3DLines(P1, V1P, P0, V02);
+        let a = Math.sqrt(alf.alf2 / (1.0 - alf.alf2));
+        let u = a / (1.0 + a);
+        let num = (1.0 - u) * (1.0 - u) * DotProduct(SubtractVectors(P, P0), SubtractVectors(P1, P)) + u * u * DotProduct(SubtractVectors(P, P2), SubtractVectors(P1, P));
+        let den = 2.0 * u * (1.0 - u) * DotProduct(SubtractVectors(P1, P), SubtractVectors(P1, P));
+        w1 = num / den;
+    } else {
+        w1 = 0.0;
+        let alf = Intersect3DLines(P, T0, P0, V02);
+        let a = Math.sqrt(alf.alf2 / (1.0 - alf.alf2));
+        let u = a / (1.0 + a);
+        let b = 2.0 * u * (1.0 - u);
+        b = -alf.alf0 * (1.0 - b) / b;
+        P1 = ScaleVector(b, T0);
+    }
+
+    return { P1, w1 };
+}
+
+// Example usage of MakeOneArc
+// let P0, T0, P2, T2, P;
+// Initialize these variables as per your specifications
+// let { P1, w1 } = MakeOneArc(P0, T0, P2, T2, P);
+
+
+
+
+
+
+// ALGORITHM A7.3
+// MakeOpenConic: Constructs an open conic arc in 3D.
+// Input: P0 (start point), T0 (start tangent), P2 (end point), T2 (end tangent), P (point on arc)
+// Output: n (number of control points minus one), U (knot vector), Pw (control points)
+
+function MakeOpenConic(P0, T0, P2, T2, P) {
+    let { P1, w1 } = MakeOneArc(P0, T0, P2, T2, P); // Assume MakeOneArc is implemented
+    let nsegs, n, U, Pw;
+
+    if (w1 <= -1.0) {
+        throw new Error("Invalid arc: Parabola or hyperbola outside convex hull");
+    }
+
+    if (w1 >= 1.0) {
+        nsegs = 1;
+    } else {
+        let angle = AngleBetweenVectors(P0, P1, P2);
+        nsegs = (w1 > 0.0 && angle > 60.0) ? 1 :
+                (w1 < 0.0 && angle > 90.0) ? 4 : 2;
+    }
+
+    n = 2 * nsegs;
+    U = new Array(2 * nsegs + 4).fill(0);
+    Pw = new Array(n + 1);
+
+    // Load end knots and control points
+    U.fill(1.0, 2 * nsegs + 1);
+    Pw[0] = P0;
+    Pw[n] = P2;
+
+    if (nsegs == 1) {
+        Pw[1] = ScaleVector(w1, P1);
+    } else {
+        // SplitArc and additional logic for nsegs == 2 or 4
+        // This part of the algorithm requires the implementation of SplitArc and related operations
+    }
+
+    // Additional code for setting internal knots and control points based on the number of segments (nsegs)
+
+    return { n, U, Pw };
+}
+
+// Example usage of MakeOpenConic
+// let P0, T0, P2, T2, P;
+// Initialize these variables as per your specifications
+// let { n, U, Pw } = MakeOpenConic(P0, T0, P2, T2, P);
+
+// Helper function: AngleBetweenVectors
+function AngleBetweenVectors(v1, v2, v3) {
+    let a = SubtractVectors(v2, v1);
+    let b = SubtractVectors(v2, v3);
+
+    let dotProduct = DotProduct(a, b);
+    let magnitudeA = Magnitude(a);
+    let magnitudeB = Magnitude(b);
+
+    // Calculate the angle in radians
+    let angle = Math.acos(dotProduct / (magnitudeA * magnitudeB));
+
+    // Convert to degrees if necessary
+    return angle * (180 / Math.PI);
+}
+
+// DotProduct function
+function DotProduct(a, b) {
+    if (a.length !== b.length) {
+        throw new Error("Vectors must be of the same dimension for dot product");
+    }
+
+    let product = 0;
+    for (let i = 0; i < a.length; i++) {
+        product += a[i] * b[i];
+    }
+    return product;
+}
+
+// Magnitude function
+function Magnitude(v) {
+    let sum = 0;
+    for (let i = 0; i < v.length; i++) {
+        sum += v[i] * v[i];
+    }
+    return Math.sqrt(sum);
+}
 
 
 
